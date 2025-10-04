@@ -3,18 +3,32 @@
 import sys
 import queue
 import time
+import hashlib
 from google.cloud import speech
 import pyaudio
+import vertexai
+from vertexai.generative_models import GenerativeModel
 
-RATE = 16000
-CHUNK = int(RATE / 10)
+from config import (
+    RATE,
+    CHUNK,
+    LANGUAGE_CODE,
+    MIN_SPEAKER_COUNT,
+    MAX_SPEAKER_COUNT,
+    CLEAN_INTERVAL_SECONDS,
+    PROJECT_ID,
+    LOCATION,
+    GEMINI_MODEL,
+    GEMINI_SYSTEM_PROMPT,
+)
 
 
 class TranscriptBuffer:
-    def __init__(self, clean_interval_seconds=5):
+    def __init__(self, clean_interval_seconds=CLEAN_INTERVAL_SECONDS):
         self.buffer = []
         self.clean_interval = clean_interval_seconds
         self.last_clean_time = time.time()
+        self.last_hash = None
 
     def add_transcript(self, text, speaker_tag=""):
         self.buffer.append(
@@ -29,18 +43,35 @@ class TranscriptBuffer:
             return
 
         raw_transcript = self.get_full_transcript()
-        cleaned = self.clean_transcript(raw_transcript)
+        current_hash = hashlib.sha256(raw_transcript.encode()).hexdigest()
 
-        print(f"\n{'=' * 60}")
-        print(f"CLEANED TRANSCRIPT (every {self.clean_interval}s):")
-        print(f"{'-' * 60}")
-        print(cleaned)
-        print(f"{'=' * 60}\n")
+        if current_hash != self.last_hash:
+            print("\n" + "=" * 60)
+            print("CLEANING TRANSCRIPT with Gemini (buffer changed)...")
+            print("-" * 60)
+
+            cleaned = self.clean_transcript(raw_transcript)
+
+            print(cleaned)
+            print("=" * 60 + "\n")
+
+            self.last_hash = current_hash
+        else:
+            print("\n[Skipping Gemini call - buffer unchanged]\n")
 
         self.last_clean_time = time.time()
 
     def clean_transcript(self, transcript):
-        return transcript
+        try:
+            model = GenerativeModel(
+                model_name=GEMINI_MODEL,
+                system_instruction=GEMINI_SYSTEM_PROMPT,
+            )
+            response = model.generate_content(transcript)
+            return response.text
+        except Exception as e:
+            print(f"Error calling Gemini: {e}")
+            return transcript
 
     def get_full_transcript(self):
         transcript_lines = []
@@ -139,21 +170,25 @@ def listen_print_loop(responses, transcript_buffer):
 
 
 def main():
-    language_code = "en-US"
-    clean_interval_seconds = 5
+    if not PROJECT_ID:
+        print("Error: GOOGLE_CLOUD_PROJECT environment variable not set.")
+        print("Please set it with: export GOOGLE_CLOUD_PROJECT='your-project-id'")
+        sys.exit(1)
+
+    vertexai.init(project=PROJECT_ID, location=LOCATION)
 
     client = speech.SpeechClient()
 
     diarization_config = speech.SpeakerDiarizationConfig(
         enable_speaker_diarization=True,
-        min_speaker_count=2,
-        max_speaker_count=6,
+        min_speaker_count=MIN_SPEAKER_COUNT,
+        max_speaker_count=MAX_SPEAKER_COUNT,
     )
 
     config = speech.RecognitionConfig(
         encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
         sample_rate_hertz=RATE,
-        language_code=language_code,
+        language_code=LANGUAGE_CODE,
         diarization_config=diarization_config,
         enable_word_time_offsets=True,
     )
@@ -163,11 +198,12 @@ def main():
         interim_results=True,
     )
 
-    transcript_buffer = TranscriptBuffer(clean_interval_seconds=clean_interval_seconds)
+    transcript_buffer = TranscriptBuffer(clean_interval_seconds=CLEAN_INTERVAL_SECONDS)
 
     print("Listening with Speaker Diarization... Press Ctrl+C to stop.")
-    print("Detecting 2-6 speakers")
-    print(f"Cleaning transcript every {clean_interval_seconds} seconds")
+    print(f"Detecting {MIN_SPEAKER_COUNT}-{MAX_SPEAKER_COUNT} speakers")
+    print(f"Cleaning transcript with Gemini every {CLEAN_INTERVAL_SECONDS} seconds")
+    print(f"Using model: {GEMINI_MODEL}")
     print("=" * 60)
 
     with MicrophoneStream(RATE, CHUNK) as stream:
