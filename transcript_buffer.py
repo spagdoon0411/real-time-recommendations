@@ -41,6 +41,7 @@ class TranscriptBuffer:
         if time.time() - self.last_clean_time >= self.clean_interval:
             self._run_clean()
 
+
     def _run_clean(self):
         if not self.buffer:
             return
