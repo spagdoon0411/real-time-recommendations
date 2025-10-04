@@ -1,13 +1,22 @@
 import time
 import hashlib
 import vertexai
-from vertexai.generative_models import GenerativeModel
+from pydantic import BaseModel
+import instructor
+import google.generativeai as genai
 
 from config import (
     CLEAN_INTERVAL_SECONDS,
     GEMINI_MODEL,
     GEMINI_SYSTEM_PROMPT,
+    PROJECT_ID,
+    LOCATION,
 )
+
+
+class TranscriptCleaningResponse(BaseModel):
+    cleaned_transcript: str
+    topic_finished: bool
 
 
 class TranscriptBuffer:
@@ -16,6 +25,13 @@ class TranscriptBuffer:
         self.clean_interval = clean_interval_seconds
         self.last_clean_time = time.time()
         self.last_hash = None
+        self.last_cleaning_result = None
+        
+        # Initialize Vertex AI and Instructor client
+        vertexai.init(project=PROJECT_ID, location=LOCATION)
+        model = genai.GenerativeModel(GEMINI_MODEL)
+        self.client = instructor.from_gemini(model, mode=instructor.Mode.GEMINI_JSON)
+
 
     def add_transcript(self, text, speaker_tag=""):
         self.buffer.append(
@@ -37,9 +53,11 @@ class TranscriptBuffer:
             print("CLEANING TRANSCRIPT with Gemini (buffer changed)...")
             print("-" * 60)
 
-            cleaned = self.clean_transcript(raw_transcript)
+            cleaning_result = self.clean_transcript(raw_transcript)
+            self.last_cleaning_result = cleaning_result
 
-            print(cleaned)
+            print(cleaning_result.cleaned_transcript)
+            print(f"\nTopic finished: {cleaning_result.topic_finished}")
             print("=" * 60 + "\n")
 
             self.last_hash = current_hash
@@ -50,15 +68,23 @@ class TranscriptBuffer:
 
     def clean_transcript(self, transcript):
         try:
-            model = GenerativeModel(
-                model_name=GEMINI_MODEL,
-                system_instruction=GEMINI_SYSTEM_PROMPT,
+            # Use Instructor to get structured output
+            response = self.client.create(
+                response_model=TranscriptCleaningResponse,
+                messages=[
+                    {"role": "system", "content": GEMINI_SYSTEM_PROMPT},
+                    {"role": "user", "content": transcript},
+                ],
             )
-            response = model.generate_content(transcript)
-            return response.text
+            return response
+            
         except Exception as e:
-            print(f"Error calling Gemini: {e}")
-            return transcript
+            print(f"Error calling Gemini with Instructor: {e}")
+            # Fallback to original transcript with topic_finished=False
+            return TranscriptCleaningResponse(
+                cleaned_transcript=transcript,
+                topic_finished=False
+            )
 
     def get_full_transcript(self):
         transcript_lines = []
@@ -70,3 +96,11 @@ class TranscriptBuffer:
             else:
                 transcript_lines.append(text)
         return "\n".join(transcript_lines)
+
+    def is_topic_finished(self):
+        """Check if the current topic has finished based on the last cleaning result."""
+        return self.last_cleaning_result.topic_finished if self.last_cleaning_result else False
+
+    def get_last_cleaning_result(self):
+        """Get the last cleaning result, which includes both cleaned transcript and topic_finished status."""
+        return self.last_cleaning_result

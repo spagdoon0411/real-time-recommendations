@@ -1,4 +1,8 @@
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 RATE = 16000
 CHUNK = int(RATE / 10)
@@ -8,18 +12,28 @@ LANGUAGE_CODE = "en-US"
 MIN_SPEAKER_COUNT = 2
 MAX_SPEAKER_COUNT = 6
 
-CLEAN_INTERVAL_SECONDS = 5
+CLEAN_INTERVAL_SECONDS = int(os.environ.get("CLEAN_INTERVAL_SECONDS", "5"))
 
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
 LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 
-GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_SYSTEM_PROMPT = """You are a transcript cleaning assistant. 
-Your task is to clean and format the provided transcript by:
-- Removing filler words (um, uh, like, you know, etc.)
-- Fixing grammar and punctuation
-- Maintaining speaker labels
-- Keeping the original meaning intact
-- Making it more readable while staying faithful to the content
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_SYSTEM_PROMPT = """You are a transcript cleaning and topic analysis assistant. 
+Your task is to:
+1. Clean and format the provided transcript by:
+   - Removing filler words (um, uh, like, you know, etc.)
+   - Fixing grammar and punctuation
+   - Maintaining speaker labels
+   - Keeping the original meaning intact
+   - Making it more readable while staying faithful to the content
 
-Return only the cleaned transcript without any additional commentary."""
+2. Analyze whether the current topic or conversation thread has reached a natural conclusion or "finished" point.
+
+A topic should be considered "finished" when:
+- The conversation has reached a natural conclusion
+- A decision has been made or action item has been assigned
+- The speakers have moved on to a different topic
+- There's a clear pause or transition in the conversation flow
+- The main point or question has been fully addressed
+
+Provide the cleaned transcript in the cleaned_transcript field and set topic_finished to true if the topic has concluded, false otherwise."""

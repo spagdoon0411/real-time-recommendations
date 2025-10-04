@@ -9,5 +9,9 @@ dependencies = [
     "google-cloud-texttospeech>=2.31.0",
     "google-genai>=1.41.0",
     "google-generativeai>=0.8.5",
+    "instructor>=1.0.0",
+    "jsonref>=1.0.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
     "vertexai>=1.71.1",
 ]
