@@ -2,11 +2,56 @@
 
 import sys
 import queue
+import time
 from google.cloud import speech
 import pyaudio
 
 RATE = 16000
 CHUNK = int(RATE / 10)
+
+
+class TranscriptBuffer:
+    def __init__(self, clean_interval_seconds=5):
+        self.buffer = []
+        self.clean_interval = clean_interval_seconds
+        self.last_clean_time = time.time()
+
+    def add_transcript(self, text, speaker_tag=""):
+        self.buffer.append(
+            {"speaker": speaker_tag, "text": text, "timestamp": time.time()}
+        )
+
+        if time.time() - self.last_clean_time >= self.clean_interval:
+            self._run_clean()
+
+    def _run_clean(self):
+        if not self.buffer:
+            return
+
+        raw_transcript = self.get_full_transcript()
+        cleaned = self.clean_transcript(raw_transcript)
+
+        print(f"\n{'=' * 60}")
+        print(f"CLEANED TRANSCRIPT (every {self.clean_interval}s):")
+        print(f"{'-' * 60}")
+        print(cleaned)
+        print(f"{'=' * 60}\n")
+
+        self.last_clean_time = time.time()
+
+    def clean_transcript(self, transcript):
+        return transcript
+
+    def get_full_transcript(self):
+        transcript_lines = []
+        for entry in self.buffer:
+            speaker = entry["speaker"].strip()
+            text = entry["text"].strip()
+            if speaker:
+                transcript_lines.append(f"{speaker}{text}")
+            else:
+                transcript_lines.append(text)
+        return "\n".join(transcript_lines)
 
 
 class MicrophoneStream:
@@ -59,7 +104,7 @@ class MicrophoneStream:
             yield b"".join(data)
 
 
-def listen_print_loop(responses):
+def listen_print_loop(responses, transcript_buffer):
     num_chars_printed = 0
     for response in responses:
         if not response.results:
@@ -89,11 +134,13 @@ def listen_print_loop(responses):
             num_chars_printed = len(transcript)
         else:
             print(speaker_tag + transcript + overwrite_chars)
+            transcript_buffer.add_transcript(transcript, speaker_tag)
             num_chars_printed = 0
 
 
 def main():
     language_code = "en-US"
+    clean_interval_seconds = 5
 
     client = speech.SpeechClient()
 
@@ -116,8 +163,11 @@ def main():
         interim_results=True,
     )
 
+    transcript_buffer = TranscriptBuffer(clean_interval_seconds=clean_interval_seconds)
+
     print("Listening with Speaker Diarization... Press Ctrl+C to stop.")
     print("Detecting 2-6 speakers")
+    print(f"Cleaning transcript every {clean_interval_seconds} seconds")
     print("=" * 60)
 
     with MicrophoneStream(RATE, CHUNK) as stream:
@@ -129,7 +179,7 @@ def main():
 
         responses = client.streaming_recognize(streaming_config, requests)
 
-        listen_print_loop(responses)
+        listen_print_loop(responses, transcript_buffer)
 
 
 if __name__ == "__main__":
