@@ -64,6 +64,7 @@ The application will:
 ## Features
 
 - **Real-time transcription**: See your words appear as you speak
+- **Speaker diarization**: Automatically identifies and labels different speakers (Speaker 1, Speaker 2, etc.)
 - **Interim results**: Partial transcriptions update continuously
 - **High accuracy**: Uses Google Cloud's state-of-the-art speech recognition
 - **Streaming mode**: Low latency with continuous audio input
@@ -75,6 +76,8 @@ You can modify these parameters in `stream_audio.py`:
 - `RATE`: Sample rate in Hz (default: 16000)
 - `CHUNK`: Audio chunk size (default: RATE/10 = 1600)
 - `language_code`: Language for recognition (default: "en-US")
+- `min_speaker_count`: Minimum number of speakers to detect (default: 2)
+- `max_speaker_count`: Maximum number of speakers to detect (default: 6)
 
 ## Troubleshooting
 

@@ -71,6 +71,16 @@ def listen_print_loop(responses):
 
         transcript = result.alternatives[0].transcript
 
+        speaker_tag = ""
+        if (
+            result.is_final
+            and hasattr(result.alternatives[0], "words")
+            and result.alternatives[0].words
+        ):
+            words_info = result.alternatives[0].words
+            if words_info and hasattr(words_info[0], "speaker_tag"):
+                speaker_tag = f"[Speaker {words_info[0].speaker_tag}] "
+
         overwrite_chars = " " * (num_chars_printed - len(transcript))
 
         if not result.is_final:
@@ -78,7 +88,7 @@ def listen_print_loop(responses):
             sys.stdout.flush()
             num_chars_printed = len(transcript)
         else:
-            print(transcript + overwrite_chars)
+            print(speaker_tag + transcript + overwrite_chars)
             num_chars_printed = 0
 
 
@@ -86,10 +96,19 @@ def main():
     language_code = "en-US"
 
     client = speech.SpeechClient()
+
+    diarization_config = speech.SpeakerDiarizationConfig(
+        enable_speaker_diarization=True,
+        min_speaker_count=2,
+        max_speaker_count=6,
+    )
+
     config = speech.RecognitionConfig(
         encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
         sample_rate_hertz=RATE,
         language_code=language_code,
+        diarization_config=diarization_config,
+        enable_word_time_offsets=True,
     )
 
     streaming_config = speech.StreamingRecognitionConfig(
@@ -97,7 +116,8 @@ def main():
         interim_results=True,
     )
 
-    print("Listening... Press Ctrl+C to stop.")
+    print("Listening with Speaker Diarization... Press Ctrl+C to stop.")
+    print("Detecting 2-6 speakers")
     print("=" * 60)
 
     with MicrophoneStream(RATE, CHUNK) as stream:
